@@ -1,7 +1,12 @@
+using System;
 using UnityEngine;
 
 public class PlayerMovement : MonoBehaviour
 {
+    public event Action OnPlayerJump;
+    public event Action OnPlayerFall;
+    public event Action<PlayerState> OnPlayerStateChanged;
+    
     [Header("References")]
     [SerializeField]private Transform orientation;
     private Rigidbody rb;
@@ -29,6 +34,7 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float airDrag;
     [SerializeField] private float jumpCd;
     private bool canJump = true;
+    private bool isFalling;
 
     [Header("Ground Check Settings")]
     [SerializeField] private float groundDrag;
@@ -36,6 +42,8 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float playerHeight;
     [SerializeField] private LayerMask whatIsGround;
 
+    private float startMoveSpeed;
+    private float startJumpForce;
 
     private Vector3 moveDir;
 
@@ -48,11 +56,17 @@ public class PlayerMovement : MonoBehaviour
         stateController = GetComponent<StateController>();
         rb = GetComponent<Rigidbody>();
         rb.freezeRotation = true;
+
+
+        startMoveSpeed = moveSpeed; 
+        startJumpForce = jumpForce;
     }
 
     private void Update()
     {
         isGrounded = IsGrounded();
+        isFalling = IsFalling();
+        FallingBool();
         SetInputs();
         SetState();
         SetDrag();
@@ -100,13 +114,17 @@ public class PlayerMovement : MonoBehaviour
             _ when moveDir != Vector3.zero && isGrounded && isSliding => PlayerState.Slide,
             _ when moveDir == Vector3.zero && isSliding && isSliding => PlayerState.SlideIdle,
             _ when !canJump && !isGrounded => PlayerState.Jump,
+            _ when isFalling => PlayerState.Fall,
             _ => currentState
         };
 
         if (newState != currentState) 
         {
             stateController.ChangeState(newState);
+            OnPlayerStateChanged?.Invoke(newState);
         }
+
+        Debug.Log(currentState);
     }
 
     private void SetMovement()
@@ -150,6 +168,8 @@ public class PlayerMovement : MonoBehaviour
 
     private void Jump()
     {
+        OnPlayerJump?.Invoke();
+
         rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
         rb.AddForce(transform.up * jumpForce, ForceMode.Impulse);
     }
@@ -159,9 +179,24 @@ public class PlayerMovement : MonoBehaviour
         canJump = true;
     }
 
-    private bool IsGrounded()
+    #region Help Functions
+
+    public bool IsGrounded()
     {
         return Physics.Raycast(transform.position, Vector3.down, playerHeight * 0.5f + 0.2f, whatIsGround);
+    }
+
+    private bool IsFalling()
+    {
+        return !Physics.Raycast(transform.position, Vector3.down, playerHeight * 0.5f + 0.2f, whatIsGround);
+    }
+
+    private void FallingBool()
+    {
+        if (isFalling) 
+        {
+            OnPlayerFall.Invoke();
+        }
     }
 
     private Vector3 GetMovementdirection()
@@ -169,8 +204,36 @@ public class PlayerMovement : MonoBehaviour
         return moveDir.normalized;
     }
 
+    public Rigidbody ReturnRb()
+    {
+        return rb;
+    }
+
     private bool IsSliding()
     {
         return isSliding;
     }
+
+    public void SetMovementSpeed(float speed, float duration)
+    {
+        moveSpeed += speed;
+        Invoke(nameof(ResetMoveSpeed), duration);
+    }
+
+    private void ResetMoveSpeed()
+    {
+        moveSpeed = startMoveSpeed;
+    }
+
+    public void SetJumpForce(float force, float duration)
+    {
+        jumpForce += force;
+        Invoke(nameof(ResetJumpForce), duration);
+    }
+
+    private void ResetJumpForce()
+    {
+        jumpForce = startJumpForce;
+    }
+    #endregion
 }
